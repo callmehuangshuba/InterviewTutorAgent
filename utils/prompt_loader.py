@@ -56,6 +56,16 @@ def load_report_prompts():
         raise e
 
 
+def load_pm_prompts():
+    """加载产品经理面试官专用 prompt"""
+    try:
+        pm_prompt_path = get_abs_path("prompts/pm_interviewer_prompt.txt")
+        return open(pm_prompt_path, "r", encoding="utf-8").read()
+    except Exception as e:
+        logger.error(f"[load_pm_prompts]读取产品经理 prompt 出错: {e}")
+        return load_system_prompts()
+
+
 if __name__ == '__main__':
     print(load_report_prompts())
 

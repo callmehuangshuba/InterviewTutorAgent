@@ -25,15 +25,19 @@ class RagSummarizeService(object):
         self.enable_rerank = bool(rag_conf.get("enable_rerank", False))
         self.recall_k = int(rag_conf.get("rerank_recall_k", 12))
         self.final_k = int(chroma_conf.get("k", 3))
-        # 保持原有k语义：k=3代表最终给模型的文档数
-        # 启用重排序时仅扩大初次召回数量，再重排回top-k
-        retriever_k = self.recall_k if self.enable_rerank else self.final_k
-        self.retriever = self.vector_store.get_retriever(k=retriever_k)
+        self._retriever = None
         self.rerank_service = RerankService() if self.enable_rerank else None
         self.prompt_text = load_rag_prompts()
         self.prompt_template = PromptTemplate.from_template(self.prompt_text)
         self.model = chat_model
         self.chain = self._init_chain()
+
+    @property
+    def retriever(self):
+        if self._retriever is None:
+            retriever_k = self.recall_k if self.enable_rerank else self.final_k
+            self._retriever = self.vector_store.get_retriever(k=retriever_k)
+        return self._retriever
 
     def _init_chain(self):
         chain = self.prompt_template  | self.model | StrOutputParser()

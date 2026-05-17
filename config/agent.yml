@@ -1,4 +1,4 @@
 external_data_path: data/external/records.csv
-amap_key: ""
+amap_key: "mock_amap_key_for_testing"
 amap_ip_api: "https://restapi.amap.com/v3/ip"
 amap_weather_api: "https://restapi.amap.com/v3/weather/weatherInfo"

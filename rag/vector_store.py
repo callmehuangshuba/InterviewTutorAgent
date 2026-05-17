@@ -1,116 +1,136 @@
-from langchain_chroma import Chroma
+import os
+import pickle
+import hashlib
+import glob as glob_module
+from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
-from utils.config_handler import chroma_conf
+from langchain_core.vectorstores import VectorStore
+from utils.config_handler import chroma_conf, rag_conf
 from model.factory import embed_model
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from utils.path_tool import get_abs_path
 from utils.file_handler import pdf_loader, txt_loader, listdir_with_allowed_type, get_file_md5_hex
 from utils.logger_handler import logger
-import os
 
 
 class VectorStoreService:
     def __init__(self):
-        self.vector_store = Chroma(
-            collection_name=chroma_conf["collection_name"],
-            embedding_function=embed_model,
-            persist_directory=chroma_conf["persist_directory"],
-        )
-
+        self._index_path = get_abs_path(chroma_conf["persist_directory"])
         self.spliter = RecursiveCharacterTextSplitter(
             chunk_size=chroma_conf["chunk_size"],
             chunk_overlap=chroma_conf["chunk_overlap"],
             separators=chroma_conf["separators"],
             length_function=len,
         )
+        self.vector_store: VectorStore | None = self._load_index()
+
+    def _load_index(self) -> VectorStore | None:
+        faiss_path = os.path.join(self._index_path, "index.faiss")
+        if os.path.exists(faiss_path):
+            try:
+                return FAISS.load_local(
+                    self._index_path,
+                    embed_model,
+                    allow_dangerous_deserialization=True,
+                )
+            except Exception as e:
+                logger.warning(f"加载 FAISS 索引失败，将重新构建：{e}")
+        return None
+
+    def _save_index(self):
+        if self.vector_store is not None:
+            self.vector_store.save_local(self._index_path)
+            logger.info("FAISS 索引已保存")
 
     def get_retriever(self, k: int | None = None):
         target_k = k if isinstance(k, int) and k > 0 else chroma_conf["k"]
+        if self.vector_store is None:
+            raise RuntimeError("知识库未加载，请先点击「加载/更新知识库」")
         return self.vector_store.as_retriever(search_kwargs={"k": target_k})
 
     def load_document(self):
-        """
-        从数据文件夹内读取数据文件，转为向量存入向量库
-        要计算文件的MD5做去重
-        :return: None
-        """
+        md5_store_path = get_abs_path(chroma_conf["md5_hex_store"])
 
-        def check_md5_hex(md5_for_check: str):
-            if not os.path.exists(get_abs_path(chroma_conf["md5_hex_store"])):
-                # 创建文件
-                open(get_abs_path(chroma_conf["md5_hex_store"]), "w", encoding="utf-8").close()
-                return False            # md5 没处理过
+        def _check_md5(md5: str) -> bool:
+            if not os.path.exists(md5_store_path):
+                open(md5_store_path, "w", encoding="utf-8").close()
+                return False
+            with open(md5_store_path, "r", encoding="utf-8") as f:
+                return md5 in {line.strip() for line in f}
 
-            with open(get_abs_path(chroma_conf["md5_hex_store"]), "r", encoding="utf-8") as f:
-                for line in f.readlines():
-                    line = line.strip()
-                    if line == md5_for_check:
-                        return True     # md5 处理过
+        def _save_md5(md5: str):
+            with open(md5_store_path, "a", encoding="utf-8") as f:
+                f.write(md5 + "\n")
 
-                return False            # md5 没处理过
-
-        def save_md5_hex(md5_for_check: str):
-            with open(get_abs_path(chroma_conf["md5_hex_store"]), "a", encoding="utf-8") as f:
-                f.write(md5_for_check + "\n")
-
-        def get_file_documents(read_path: str):
-            if read_path.endswith("txt"):
-                return txt_loader(read_path)
-
-            if read_path.endswith("pdf"):
-                return pdf_loader(read_path)
-
+        def _get_docs(path: str):
+            if path.endswith("txt"):
+                return txt_loader(path)
+            if path.endswith("pdf"):
+                return pdf_loader(path)
+            if path.endswith("md"):
+                return txt_loader(path)  # markdown 当作纯文本处理
             return []
 
-        allowed_files_path: list[str] = listdir_with_allowed_type(
+        allowed_files = listdir_with_allowed_type(
             get_abs_path(chroma_conf["data_path"]),
             tuple(chroma_conf["allow_knowledge_file_type"]),
         )
+        # 额外递归扫描子目录中的 .md 文件（面经数据在 interview_exp_md/ 子目录）
+        data_root = get_abs_path(chroma_conf["data_path"])
+        import os
+        for root, dirs, files in os.walk(data_root):
+            for fname in files:
+                if fname.endswith(tuple(chroma_conf["allow_knowledge_file_type"])):
+                    full_path = os.path.join(root, fname)
+                    if full_path not in allowed_files:
+                        allowed_files = allowed_files + (full_path,)
 
-        for path in allowed_files_path:
-            # 获取文件的MD5
+        all_docs: list[Document] = []
+
+        for path in allowed_files:
             md5_hex = get_file_md5_hex(path)
-
-            if check_md5_hex(md5_hex):
-                logger.info(f"[加载知识库]{path}内容已经存在知识库内，跳过")
+            if _check_md5(md5_hex):
+                logger.info(f"[加载知识库]{path} 已存在，跳过")
                 continue
 
             try:
-                documents: list[Document] = get_file_documents(path)
-
-                if not documents:
-                    logger.warning(f"[加载知识库]{path}内没有有效文本内容，跳过")
+                docs = _get_docs(path)
+                if not docs:
+                    logger.warning(f"[加载知识库]{path} 无有效内容，跳过")
                     continue
 
-                split_document: list[Document] = self.spliter.split_documents(documents)
-
-                if not split_document:
-                    logger.warning(f"[加载知识库]{path}分片后没有有效文本内容，跳过")
+                split_docs = self.spliter.split_documents(docs)
+                if not split_docs:
+                    logger.warning(f"[加载知识库]{path} 分片后无有效内容，跳过")
                     continue
 
-                # 将内容存入向量库
-                self.vector_store.add_documents(split_document)
-
-                # 记录这个已经处理好的文件的md5，避免下次重复加载
-                save_md5_hex(md5_hex)
-
-                logger.info(f"[加载知识库]{path} 内容加载成功")
+                all_docs.extend(split_docs)
+                _save_md5(md5_hex)
+                logger.info(f"[加载知识库]{path} 准备就绪（{len(split_docs)} 个分片）")
             except Exception as e:
-                # exc_info为True会记录详细的报错堆栈，如果为False仅记录报错信息本身
-                logger.error(f"[加载知识库]{path}加载失败：{str(e)}", exc_info=True)
-                continue
+                logger.error(f"[加载知识库]{path} 加载失败：{e}", exc_info=True)
+
+        if not all_docs:
+            logger.info("没有新文档需要加载")
+            return
+
+        try:
+            if self.vector_store is None:
+                self.vector_store = FAISS.from_documents(all_docs, embed_model)
+            else:
+                self.vector_store.add_documents(all_docs)
+            self._save_index()
+            logger.info(f"知识库加载完成，共 {len(all_docs)} 个分片")
+        except Exception as e:
+            logger.error(f"知识库写入失败：{e}", exc_info=True)
 
 
 if __name__ == '__main__':
     vs = VectorStoreService()
-
     vs.load_document()
-
     retriever = vs.get_retriever()
-
-    res = retriever.invoke("线程")
-    for r in res:
+    for r in retriever.invoke("线程"):
         print(r.page_content)
-        print("-"*20)
+        print("-" * 20)
 
 

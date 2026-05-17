@@ -45,8 +45,10 @@ def listdir_with_allowed_type(path: str, allowed_types: tuple[str]):  # 返回�
         return allowed_types
 
     for f in os.listdir(path):
-        if f.endswith(allowed_types):
-            files.append(os.path.join(path, f))
+        full_path = os.path.join(path, f)
+        # 必须是文件而非目录，且后缀匹配
+        if os.path.isfile(full_path) and f.endswith(allowed_types):
+            files.append(full_path)
 
     return tuple(files)
 

@@ -8,27 +8,38 @@ from agent.agent_tools import get_city, get_weather
 from rag.vector_store import VectorStoreService
 from utils.user_history_store import load_user_state, save_user_state
 
-
+# 浏览器标题
 st.set_page_config(page_title="基于RAG与Agent的多模态面试辅导助手(扁平版)", page_icon="💼", layout="wide")
+# 一级标题
 st.title("💼 基于RAG与Agent的多模态面试辅导助手")
 
-
+#用户id
 if "current_user_id" not in st.session_state:
     st.session_state.current_user_id = f"guest_{uuid.uuid4().hex[:8]}"
+#模拟面试 历史对话
 if "interview_history" not in st.session_state:
     st.session_state.interview_history = []
+# 问答历史
 if "qa_history" not in st.session_state:
     st.session_state.qa_history = []
+# 面试问题列表
 if "interview_questions" not in st.session_state:
     st.session_state.interview_questions = []
+# 面试状态标志
 if "interview_started" not in st.session_state:
     st.session_state.interview_started = False
 if "interview_finished" not in st.session_state:
     st.session_state.interview_finished = False
+#  面试报告
 if "interview_report" not in st.session_state:
     st.session_state.interview_report = ""
+# 目标公司和岗位
+if "target_company" not in st.session_state:
+    st.session_state.target_company = ""
+if "target_position" not in st.session_state:
+    st.session_state.target_position = ""
 
-
+# 将用户的当前会话状态保存到持久化存储中   utils/user_history_store.py
 def persist_state():
     save_user_state(
         st.session_state.current_user_id,
@@ -39,16 +50,37 @@ def persist_state():
             "interview_started": st.session_state.interview_started,
             "interview_finished": st.session_state.interview_finished,
             "interview_report": st.session_state.interview_report,
+            "target_company": st.session_state.target_company,
+            "target_position": st.session_state.target_position,
         },
     )
 
-
+# 在Streamlit界面中渲染聊天记录
 def render_chat_history(messages):
     for m in messages:
         with st.chat_message(m["role"]):
             st.markdown(m["content"])
 
 
+def auto_scroll_bottom():
+    """注入 JS 让聊天容器自动滚动到底部"""
+    st.markdown(
+        """
+        <script>
+        const scrollToBottom = () => {
+            const containers = window.parent.document.querySelectorAll('[data-testid="stChatMessageContainer"]');
+            if (containers.length > 0) {
+                containers[containers.length - 1].scrollIntoView({ behavior: "smooth", block: "end" });
+            }
+        };
+        setTimeout(scrollToBottom, 100);
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+#根据天气信息生成面试穿衣和出行建议
 def generate_life_advice(weather_text: str) -> tuple[str, str]:
     if not weather_text:
         return "穿衣建议：暂无", "出行提醒：暂无"
@@ -104,6 +136,8 @@ if "user_state_loaded" not in st.session_state:
     st.session_state.interview_started = loaded.get("interview_started", False)
     st.session_state.interview_finished = loaded.get("interview_finished", False)
     st.session_state.interview_report = loaded.get("interview_report", "")
+    st.session_state.target_company = loaded.get("target_company", "")
+    st.session_state.target_position = loaded.get("target_position", "")
     st.session_state.user_state_loaded = True
     os.environ["CURRENT_USER_ID"] = st.session_state.current_user_id
 
@@ -122,6 +156,8 @@ if st.sidebar.button("切换/加载用户", use_container_width=True):
     st.session_state.interview_started = loaded.get("interview_started", False)
     st.session_state.interview_finished = loaded.get("interview_finished", False)
     st.session_state.interview_report = loaded.get("interview_report", "")
+    st.session_state.target_company = loaded.get("target_company", "")
+    st.session_state.target_position = loaded.get("target_position", "")
     os.environ["CURRENT_USER_ID"] = target_user_id
     st.sidebar.success(f"已加载用户：{target_user_id}")
     st.rerun()
@@ -156,19 +192,80 @@ if mode == "问答模式":
         st.rerun()
 
     render_chat_history(st.session_state.qa_history)
+    auto_scroll_bottom()
 
     question = st.chat_input("请输入你想问的问题...")
     if question:
         st.session_state.qa_history.append({"role": "user", "content": question})
-        answer = service.qa_chat(question, st.session_state.qa_history)
+        # 立即显示用户消息
+        st.chat_message("user").markdown(question)
+        # spinner 单独显示在下面
+        thinking_ph = st.empty()
+        with thinking_ph:
+            with st.spinner("🤔 AI 正在思考中，请稍候..."):
+                answer = service.qa_chat(question, st.session_state.qa_history)
+        thinking_ph.empty()
         if not (answer or "").strip():
-            answer = "抱歉，我这次没有成功生成回答。请重试一次，或先点击左侧“加载/更新知识库”后再提问。"
+            answer = "抱歉，我这次没有成功生成回答。请重试一次，或先点击左侧「加载/更新知识库」后再提问。"
         st.session_state.qa_history.append({"role": "assistant", "content": answer})
         persist_state()
         st.rerun()
 else:
     st.subheader("模拟面试模式")
-    st.caption("模型将基于知识库模拟面试官提问。")
+    st.caption("模型将基于知识库和真实面经模拟面试官提问。")
+
+    # 目标公司与岗位选择
+    with st.expander("🎯 设置面试目标（可选）", expanded=True):
+        col_c, col_p = st.columns(2)
+
+        # 预设公司列表 + 自定义选项
+        preset_companies = [
+            "", "字节跳动", "腾讯", "阿里巴巴", "美团", "快手", "百度",
+            "拼多多", "京东", "网易", "华为", "小米", "滴滴", "滴滴出行",
+            "哔哩哔哩", "小红书", "米哈游", "蚂蚁集团", "商汤科技", "旷视科技",
+            "地平线机器人", "SHEIN", "携程", "雪球", "富途证券", "老虎证券",
+            "OPPO", "VIVO", "大疆", "蔚来", "理想汽车", "小鹏汽车",
+        ]
+        is_custom_company = st.session_state.target_company not in preset_companies and st.session_state.target_company != ""
+
+        # 预设岗位列表 + 自定义选项
+        preset_positions = [
+            "", "后端", "前端", "算法", "测试", "运维", "客户端", "数据",
+            "基础架构", "LLM应用开发", "Agent/AI应用开发", "AI Infra",
+            "大模型工程", "RAG开发", "NLP算法", "CV算法", "推荐算法",
+            "搜索算法", "服务端", "全栈", "平台开发", "安全", "DBA",
+            "游戏客户端", "游戏服务端", "Unity开发", "UE开发",
+            "产品经理",
+        ]
+        is_custom_position = st.session_state.target_position not in preset_positions and st.session_state.target_position != ""
+
+        with col_c:
+            company_options = preset_companies + (["自定义"] if is_custom_company else ["自定义"])
+            default_idx = company_options.index(st.session_state.target_company) if st.session_state.target_company in company_options else 0
+            sel_c = st.selectbox("目标公司", company_options, index=default_idx)
+            if sel_c == "自定义":
+                custom_c = st.text_input("请输入自定义公司名称", value=st.session_state.target_company if is_custom_company else "", placeholder="例如：创业公司名称")
+                st.session_state.target_company = custom_c.strip()
+            else:
+                st.session_state.target_company = sel_c
+
+        with col_p:
+            position_options = preset_positions + (["自定义"] if is_custom_position else ["自定义"])
+            default_idx_p = position_options.index(st.session_state.target_position) if st.session_state.target_position in position_options else 0
+            sel_p = st.selectbox("目标岗位", position_options, index=default_idx_p)
+            if sel_p == "自定义":
+                custom_p = st.text_input("请输入自定义岗位名称", value=st.session_state.target_position if is_custom_position else "", placeholder="例如：Agent开发工程师")
+                st.session_state.target_position = custom_p.strip()
+            else:
+                st.session_state.target_position = sel_p
+
+        if st.session_state.target_company or st.session_state.target_position:
+            target_tip = []
+            if st.session_state.target_company:
+                target_tip.append(f"公司：{st.session_state.target_company}")
+            if st.session_state.target_position:
+                target_tip.append(f"岗位：{st.session_state.target_position}")
+            st.success(" | ".join(target_tip) + " — 面试官将优先参考该公司的真实面经出题")
 
     col1, col2, col3 = st.columns([1, 1, 2])
     with col1:
@@ -180,10 +277,15 @@ else:
             st.session_state.interview_finished = False
             persist_state()
 
-            first_question = service.interview_chat(
-                "请开始本次面试，先简单寒暄并提出第一个问题。",
-                st.session_state.interview_history,
-            )
+            with st.spinner("🤖 面试官正在准备中..."):
+                first_question = service.interview_chat(
+                    "请开始本次面试，先简单寒暄并提出第一个问题。",
+                    st.session_state.interview_history,
+                    target_company=st.session_state.target_company,
+                    target_position=st.session_state.target_position,
+                    thread_id=st.session_state.current_user_id,
+                )
+
             st.session_state.interview_history.append({"role": "assistant", "content": first_question})
             if "?" in first_question or "？" in first_question:
                 st.session_state.interview_questions.append(first_question)
@@ -198,14 +300,28 @@ else:
 
     with col3:
         st.write("当前状态：", "已结束" if st.session_state.interview_finished else "进行中")
-
+    #显示完整的面试对话记录
     render_chat_history(st.session_state.interview_history)
+    auto_scroll_bottom()
 
     if st.session_state.interview_started and not st.session_state.interview_finished:
         user_reply = st.chat_input("请输入你的回答...")
         if user_reply:
             st.session_state.interview_history.append({"role": "user", "content": user_reply})
-            interviewer_reply = service.interview_chat(user_reply, st.session_state.interview_history)
+            # 立即显示用户消息
+            st.chat_message("user").markdown(user_reply)
+            # spinner 单独显示在下面
+            thinking_ph = st.empty()
+            with thinking_ph:
+                with st.spinner("🤔 面试官正在分析你的回答并准备下一个问题，请稍候..."):
+                    interviewer_reply = service.interview_chat(
+                        user_reply,
+                        st.session_state.interview_history,
+                        target_company=st.session_state.target_company,
+                        target_position=st.session_state.target_position,
+                        thread_id=st.session_state.current_user_id,
+                    )
+            thinking_ph.empty()
             st.session_state.interview_history.append({"role": "assistant", "content": interviewer_reply})
             if "?" in interviewer_reply or "？" in interviewer_reply:
                 st.session_state.interview_questions.append(interviewer_reply)
@@ -220,7 +336,7 @@ else:
                     st.session_state.interview_history,
                     st.session_state.interview_questions,
                 )
-                persist_state()
+            persist_state()
             st.rerun()
 
         if st.session_state.interview_report:

@@ -48,3 +48,34 @@ htmlcov/
 # OS files
 Thumbs.db
 .DS_Store
+
+# Temporary / scratch files
+*.tmp.*
+*.tmp
+agent/*.tmp.*
+rag/*.tmp.*
+utils/*.tmp.*
+
+# Claude Code
+.claude/
+
+# Local databases
+chroma_db/
+chroma_db_new/
+chroma_db_test/
+chroma_db_test2/
+chroma_db_test_new/
+
+# Generated data
+data/interview_exp/
+data/interview_exp_md/
+data/user_histories/
+eval_rag.py
+eval_report.json
+md5.text
+
+# Misc
+interview_prep_product_ai.md
+prompts/pm_interviewer_prompt.txt
+agent/interview_search_tools.py
+zhibo/
