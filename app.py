@@ -10,6 +10,34 @@ from utils.user_history_store import load_user_state, save_user_state
 
 # 浏览器标题
 st.set_page_config(page_title="基于RAG与Agent的多模态面试辅导助手(扁平版)", page_icon="💼", layout="wide")
+
+# ── 密码保护 ─────────────────────────────────────────
+def _check_password():
+    """检查是否设置了密码保护，并验证登录"""
+    try:
+        app_password = st.secrets.get("APP_PASSWORD", "")
+    except Exception:
+        app_password = ""
+    if not app_password:
+        return True  # 未设置密码，跳过验证
+
+    if st.session_state.get("password_verified", False):
+        return True  # 已验证过
+
+    st.markdown("🔒 **请先登录**")
+    with st.form("login_form", clear_on_submit=True):
+        pwd = st.text_input("请输入访问密码", type="password")
+        submitted = st.form_submit_button("进入")
+        if submitted:
+            if pwd == app_password:
+                st.session_state.password_verified = True
+                st.rerun()
+            else:
+                st.error("密码错误，请重试")
+    return False
+
+if not _check_password():
+    st.stop()
 # 一级标题
 st.title("💼 基于RAG与Agent的多模态面试辅导助手")
 
