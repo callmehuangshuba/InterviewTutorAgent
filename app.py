@@ -142,6 +142,22 @@ if "user_state_loaded" not in st.session_state:
     os.environ["CURRENT_USER_ID"] = st.session_state.current_user_id
 
 
+# 启动诊断：检查关键配置是否正常
+import os
+diagnostic_errors = []
+data_dir = os.path.join(os.path.dirname(__file__), "data")
+for fname in ["hr_questions.txt", "tech_knowledge.txt"]:
+    fpath = os.path.join(data_dir, fname)
+    if not os.path.exists(fpath):
+        diagnostic_errors.append(f"缺少文件: {fname}")
+api_key = os.environ.get("DASHSCOPE_API_KEY", "")
+if not api_key:
+    diagnostic_errors.append("缺少 DASHSCOPE_API_KEY 环境变量，请检查 Streamlit Secrets 配置")
+if diagnostic_errors:
+    for err in diagnostic_errors:
+        st.error(f"[启动诊断] {err}")
+    st.stop()
+
 service = InterviewAssistantService()
 
 st.sidebar.header("用户管理")
@@ -167,8 +183,11 @@ st.sidebar.write("首次使用建议先加载知识库。")
 if st.sidebar.button("加载/更新知识库", use_container_width=True):
     with st.sidebar:
         with st.spinner("正在加载知识库..."):
-            VectorStoreService().load_document()
-        st.success("知识库加载完成")
+            try:
+                VectorStoreService().load_document()
+                st.success("知识库加载完成")
+            except Exception as e:
+                st.error(f"加载失败：{e}")
 
 st.sidebar.header("天气与出行建议")
 city_name, weather_text = get_sidebar_weather_info()
