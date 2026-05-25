@@ -1,3 +1,15 @@
+import os
+
+# 支持从 Streamlit Secrets 读取 API Key（在 Streamlit Cloud 部署时生效）
+try:
+    import streamlit as st
+    if st.secrets:
+        os.environ.setdefault("DASHSCOPE_API_KEY", st.secrets.get("DASHSCOPE_API_KEY", ""))
+        os.environ.setdefault("DASHSCOPE_API_BASE", st.secrets.get("DASHSCOPE_API_BASE", "https://dashscope.aliyuncs.com/compatible-mode/v1"))
+        os.environ.setdefault("AMAP_API_KEY", st.secrets.get("AMAP_API_KEY", ""))
+except Exception:
+    pass  # 非 Streamlit 环境（本地开发）忽略，从 .env 读取
+
 from abc import ABC, abstractmethod
 from typing import Optional
 from langchain_core.embeddings import Embeddings

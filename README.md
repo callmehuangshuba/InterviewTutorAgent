@@ -91,6 +91,41 @@ InterviewAssistantService
 - **大模型与嵌入模型**
 - **高德开放平台 API**
 
+## 部署到 Streamlit Cloud（免费）
+
+### 前提条件
+1. 代码已推送到 GitHub 仓库
+2. 拥有 [Streamlit Cloud](https://streamlit.io/cloud) 账号（可用 GitHub 登录）
+
+### 操作步骤
+
+**第一步：配置 Streamlit Secrets**
+
+在 Streamlit Cloud 控制台（[share.streamlit.io](https://share.streamlit.io)）中，找到你的 App，进入 **Settings → Secrets**，添加以下配置：
+
+```toml
+DASHSCOPE_API_KEY = "sk-你的通义千问API密钥"
+DASHSCOPE_API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+AMAP_API_KEY = "你的高德地图API密钥"  # 可选，不填则天气功能返回默认天气
+```
+
+**第二步：在 Streamlit Cloud 创建 App**
+
+1. 登录 [share.streamlit.io](https://share.streamlit.io)，点击 **New app**
+2. 选择你的 GitHub 仓库：`callmehuangshuba/InterviewTutorAgent`
+3. Branch 选择 `master`，Main file path 填写 `app.py`
+4. 点击 **Deploy!**
+
+**第三步：访问你的应用**
+
+部署完成后，你将获得一个类似 `https://your-app-name.streamlit.app` 的公开 URL。
+
+### 注意事项
+
+- Streamlit Cloud 使用**临时文件系统**，每次冷启动后 `chroma_db` 和用户历史记录会被清空。首次使用需重新点击「加载/更新知识库」。
+- 所有 API Key **不要**写在代码中，必须通过 Streamlit Secrets 配置。
+- 高德地图 API Key 为可选项，不填写时天气功能会返回默认天气。
+
 ## 快速开始
 
 ### 1. 克隆仓库
