@@ -259,7 +259,10 @@ if mode == "问答模式":
         thinking_ph = st.empty()
         with thinking_ph:
             with st.spinner("🤔 AI 正在思考中，请稍候..."):
-                answer = get_service().qa_chat(question, st.session_state.qa_history)
+                try:
+                    answer = get_service().qa_chat(question, st.session_state.qa_history)
+                except Exception as e:
+                    answer = f"调用模型时出错：{e}"
         thinking_ph.empty()
         if not (answer or "").strip():
             answer = "抱歉，我这次没有成功生成回答。请重试一次，或先点击左侧「加载/更新知识库」后再提问。"
@@ -334,13 +337,16 @@ else:
             persist_state()
 
             with st.spinner("🤖 面试官正在准备中..."):
-                first_question = get_service().interview_chat(
-                    "请开始本次面试，先简单寒暄并提出第一个问题。",
-                    st.session_state.interview_history,
-                    target_company=st.session_state.target_company,
-                    target_position=st.session_state.target_position,
-                    thread_id=st.session_state.current_user_id,
-                )
+                try:
+                    first_question = get_service().interview_chat(
+                        "请开始本次面试，先简单寒暄并提出第一个问题。",
+                        st.session_state.interview_history,
+                        target_company=st.session_state.target_company,
+                        target_position=st.session_state.target_position,
+                        thread_id=st.session_state.current_user_id,
+                    )
+                except Exception as e:
+                    first_question = f"启动面试时出错：{e}"
 
             st.session_state.interview_history.append({"role": "assistant", "content": first_question})
             if "?" in first_question or "？" in first_question:
@@ -370,13 +376,16 @@ else:
             thinking_ph = st.empty()
             with thinking_ph:
                 with st.spinner("🤔 面试官正在分析你的回答并准备下一个问题，请稍候..."):
-                    interviewer_reply = get_service().interview_chat(
-                        user_reply,
-                        st.session_state.interview_history,
-                        target_company=st.session_state.target_company,
-                        target_position=st.session_state.target_position,
-                        thread_id=st.session_state.current_user_id,
-                    )
+                    try:
+                        interviewer_reply = get_service().interview_chat(
+                            user_reply,
+                            st.session_state.interview_history,
+                            target_company=st.session_state.target_company,
+                            target_position=st.session_state.target_position,
+                            thread_id=st.session_state.current_user_id,
+                        )
+                    except Exception as e:
+                        interviewer_reply = f"回复时出错：{e}"
             thinking_ph.empty()
             st.session_state.interview_history.append({"role": "assistant", "content": interviewer_reply})
             if "?" in interviewer_reply or "？" in interviewer_reply:
@@ -388,10 +397,13 @@ else:
         want_report = st.checkbox("我希望生成本次面试报告", value=False)
         if want_report and st.button("生成面试报告", use_container_width=True):
             with st.spinner("正在生成报告..."):
-                st.session_state.interview_report = get_service().generate_report(
-                    st.session_state.interview_history,
-                    st.session_state.interview_questions,
-                )
+                try:
+                    st.session_state.interview_report = get_service().generate_report(
+                        st.session_state.interview_history,
+                        st.session_state.interview_questions,
+                    )
+                except Exception as e:
+                    st.session_state.interview_report = f"生成报告时出错：{e}"
             persist_state()
             st.rerun()
 
