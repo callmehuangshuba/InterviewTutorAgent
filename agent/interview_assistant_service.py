@@ -41,7 +41,7 @@ from langchain_core.runnables import RunnableConfig
 from agent.agent_tools import rag_summarize, search_interview_exp, get_local_interview_exp
 from agent.interview_search_tools import get_local_interview_exp as get_local_interview_exp_raw
 from agent.interview_search_tools import _check_local_exp, _parse_query, METADATA_FILE, INTERVIEW_EXP_DIR, MARKDOWN_DIR
-from model.factory import chat_model
+from model.factory import get_chat_model
 from rag.rag_service import RagSummarizeService
 from utils.prompt_loader import load_report_prompts, load_system_prompts, load_system_prompts2, load_pm_prompts
 
@@ -276,7 +276,7 @@ def node_interview(state: InterviewState) -> InterviewState:
 
     # 调用 LLM
     try:
-        response = chat_model.invoke(langchain_msgs)
+        response = get_chat_model().invoke(langchain_msgs)
         print(f"[node_interview] chat_model returned, t={int((time.time()-t0)*1000)}ms")
         output = response.content if hasattr(response, "content") else str(response)
     except Exception as e:
@@ -379,7 +379,7 @@ class InterviewAssistantService:
     @staticmethod
     def _build_report_chain():
         report_prompt = PromptTemplate.from_template(load_report_prompts())
-        return report_prompt | chat_model | StrOutputParser()
+        return report_prompt | get_chat_model() | StrOutputParser()
 
     def interview_chat(self, user_input: str, history: List[dict],
                        target_company: str = "", target_position: str = "",
@@ -496,7 +496,7 @@ class InterviewAssistantService:
                             f"如果不能（即面经内容不相关或缺少关键信息），请只回复\"SKILL_SEARCH\"，不要回复其他内容。"
                 ))
                 try:
-                    check_resp = chat_model.invoke(check_messages)
+                    check_resp = get_chat_model().invoke(check_messages)
                     check_text = check_resp.content if hasattr(check_resp, "content") else str(check_resp)
                 except Exception:
                     check_text = ""
@@ -539,7 +539,7 @@ class InterviewAssistantService:
                             qa_messages.append(AIMessage(content=content))
                 qa_messages.append(HumanMessage(content=f"上下文：\n{context}\n\n用户问题：{user_input}"))
                 try:
-                    response = chat_model.invoke(qa_messages)
+                    response = get_chat_model().invoke(qa_messages)
                     return response.content if hasattr(response, "content") else str(response)
                 except Exception:
                     pass
@@ -560,7 +560,7 @@ class InterviewAssistantService:
                 messages.append(AIMessage(content=msg.get("content", "")))
         messages.append(HumanMessage(content=user_input))
         try:
-            response = chat_model.invoke(messages)
+            response = get_chat_model().invoke(messages)
             return response.content if hasattr(response, "content") else str(response)
         except Exception:
             return "抱歉，知识库尚未加载，请先点击左侧「加载/更新知识库」，然后重新提问。"

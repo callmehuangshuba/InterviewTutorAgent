@@ -6,7 +6,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 from langchain_core.vectorstores import VectorStore
 from utils.config_handler import chroma_conf, rag_conf
-from model.factory import embed_model
+from model.factory import get_embed_model
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from utils.path_tool import get_abs_path
 from utils.file_handler import pdf_loader, txt_loader, listdir_with_allowed_type, get_file_md5_hex
@@ -30,7 +30,7 @@ class VectorStoreService:
             try:
                 return FAISS.load_local(
                     self._index_path,
-                    embed_model,
+                    get_embed_model(),
                     allow_dangerous_deserialization=True,
                 )
             except Exception as e:
@@ -116,7 +116,7 @@ class VectorStoreService:
 
         try:
             if self.vector_store is None:
-                self.vector_store = FAISS.from_documents(all_docs, embed_model)
+                self.vector_store = FAISS.from_documents(all_docs, get_embed_model())
             else:
                 self.vector_store.add_documents(all_docs)
             self._save_index()
