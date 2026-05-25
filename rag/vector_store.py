@@ -85,33 +85,49 @@ class VectorStoreService:
                     if full_path not in allowed_files:
                         allowed_files = allowed_files + (full_path,)
 
+        logger.info(f"[load_document] 扫描到 {len(allowed_files)} 个文件: {[os.path.basename(f) for f in allowed_files]}")
+
         all_docs: list[Document] = []
 
         for path in allowed_files:
             md5_hex = get_file_md5_hex(path)
+            if md5_hex is None:
+                logger.warning(f"[load_document] 无法获取文件 MD5: {path}，跳过")
+                continue
             if _check_md5(md5_hex):
-                logger.info(f"[加载知识库]{path} 已存在，跳过")
+                logger.info(f"[load_document] {os.path.basename(path)} 已加载过，跳过")
                 continue
 
             try:
                 docs = _get_docs(path)
                 if not docs:
-                    logger.warning(f"[加载知识库]{path} 无有效内容，跳过")
+                    logger.warning(f"[load_document] {os.path.basename(path)} 无有效内容，跳过")
                     continue
 
                 split_docs = self.spliter.split_documents(docs)
                 if not split_docs:
-                    logger.warning(f"[加载知识库]{path} 分片后无有效内容，跳过")
+                    logger.warning(f"[load_document] {os.path.basename(path)} 分片后无有效内容，跳过")
                     continue
 
                 all_docs.extend(split_docs)
                 _save_md5(md5_hex)
-                logger.info(f"[加载知识库]{path} 准备就绪（{len(split_docs)} 个分片）")
+                logger.info(f"[load_document] {os.path.basename(path)} 准备就绪（{len(split_docs)} 个分片）")
             except Exception as e:
-                logger.error(f"[加载知识库]{path} 加载失败：{e}", exc_info=True)
+                logger.error(f"[load_document] {os.path.basename(path)} 加载失败：{e}", exc_info=True)
 
         if not all_docs:
-            logger.info("没有新文档需要加载")
+            logger.warning("[load_document] 没有找到新文档，请检查 data/ 目录是否包含 .txt/.md/.pdf 文件")
+            # 如果向量库从未构建过，创建一个占位向量库，避免后续报错
+            if self.vector_store is None:
+                try:
+                    placeholder = [Document(page_content="占位文档", metadata={"source": "placeholder"})]
+                    self.vector_store = FAISS.from_documents(placeholder, get_embed_model())
+                    self._save_index()
+                    logger.info("[load_document] 已创建占位向量库")
+                    return
+                except Exception as e2:
+                    logger.error(f"[load_document] 创建占位向量库失败: {e2}")
+                    return
             return
 
         try:
