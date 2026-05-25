@@ -152,13 +152,20 @@ for fname in ["hr_questions.txt", "tech_knowledge.txt"]:
         diagnostic_errors.append(f"缺少文件: {fname}")
 api_key = os.environ.get("DASHSCOPE_API_KEY", "")
 if not api_key:
-    diagnostic_errors.append("缺少 DASHSCOPE_API_KEY 环境变量，请检查 Streamlit Secrets 配置")
+    diagnostic_errors.append("缺少 DASHSCOPE_API_KEY，请检查 Streamlit Secrets 中是否配置了 DASHSCOPE_API_KEY")
 if diagnostic_errors:
     for err in diagnostic_errors:
-        st.error(f"[启动诊断] {err}")
+        st.error(f"[启动检查] {err}")
     st.stop()
 
-service = InterviewAssistantService()
+# 延迟初始化 service，避免在 app 加载时就调用 API
+service = None
+
+def get_service():
+    global service
+    if service is None:
+        service = InterviewAssistantService()
+    return service
 
 st.sidebar.header("用户管理")
 user_id_input = st.sidebar.text_input("用户 ID", value=st.session_state.current_user_id)
@@ -182,10 +189,12 @@ st.sidebar.header("知识库管理")
 st.sidebar.write("首次使用建议先加载知识库。")
 if st.sidebar.button("加载/更新知识库", use_container_width=True):
     with st.sidebar:
-        with st.spinner("正在加载知识库..."):
+        with st.spinner("正在加载知识库（首次可能需要10-30秒）..."):
             try:
-                VectorStoreService().load_document()
-                st.success("知识库加载完成")
+                vs = VectorStoreService()
+                vs.load_document()
+                st.session_state.vector_store = vs
+                st.success("知识库加载完成！可以开始使用了。")
             except Exception as e:
                 st.error(f"加载失败：{e}")
 
@@ -222,7 +231,7 @@ if mode == "问答模式":
         thinking_ph = st.empty()
         with thinking_ph:
             with st.spinner("🤔 AI 正在思考中，请稍候..."):
-                answer = service.qa_chat(question, st.session_state.qa_history)
+                answer = get_service().qa_chat(question, st.session_state.qa_history)
         thinking_ph.empty()
         if not (answer or "").strip():
             answer = "抱歉，我这次没有成功生成回答。请重试一次，或先点击左侧「加载/更新知识库」后再提问。"
@@ -297,7 +306,7 @@ else:
             persist_state()
 
             with st.spinner("🤖 面试官正在准备中..."):
-                first_question = service.interview_chat(
+                first_question = get_service().interview_chat(
                     "请开始本次面试，先简单寒暄并提出第一个问题。",
                     st.session_state.interview_history,
                     target_company=st.session_state.target_company,
@@ -333,7 +342,7 @@ else:
             thinking_ph = st.empty()
             with thinking_ph:
                 with st.spinner("🤔 面试官正在分析你的回答并准备下一个问题，请稍候..."):
-                    interviewer_reply = service.interview_chat(
+                    interviewer_reply = get_service().interview_chat(
                         user_reply,
                         st.session_state.interview_history,
                         target_company=st.session_state.target_company,
@@ -351,7 +360,7 @@ else:
         want_report = st.checkbox("我希望生成本次面试报告", value=False)
         if want_report and st.button("生成面试报告", use_container_width=True):
             with st.spinner("正在生成报告..."):
-                st.session_state.interview_report = service.generate_report(
+                st.session_state.interview_report = get_service().generate_report(
                     st.session_state.interview_history,
                     st.session_state.interview_questions,
                 )
