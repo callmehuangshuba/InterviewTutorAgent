@@ -652,6 +652,63 @@ def _format_results(records: List[Dict], query: str) -> str:
 
 
 # ─────────────────────────────────────────
+# 轻量级 HTTP 搜索（不依赖 skill 文件，Streamlit Cloud 可用）
+# ─────────────────────────────────────────
+
+def simple_http_search(query: str, max_results: int = 5) -> str:
+    """
+    通过牛客网搜索接口直接抓取面经列表和摘要。
+    不依赖 Playwright 和 skill 文件，适合 Streamlit Cloud 环境。
+    """
+    from urllib.parse import quote
+    encoded_query = quote(query)
+    search_url = f"https://www.nowcoder.com/search?type=post&query={encoded_query}&稽查=1&expTag=0"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+        "Referer": "https://www.nowcoder.com/",
+    }
+
+    results = []
+    try:
+        import urllib.request
+        req = urllib.request.Request(search_url, headers=headers, method="GET")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            content = resp.read().decode("utf-8", errors="ignore")
+
+        # 解析搜索结果（提取标题和摘要）
+        items = re.findall(
+            r'<h4[^>]*class="[^"]*job-news-title[^"]*"[^>]*>.*?<a[^>]+href="([^"]+)"[^>]*>([^<]+)</a>.*?</h4>.*?<p[^>]*class="[^"]*post-abstract[^"]*"[^>]*>([^<]+)',
+            content, re.DOTALL | re.IGNORECASE
+        )
+        if not items:
+            # 备用：提取所有搜索项
+            titles = re.findall(r'class="[^"]*job-news-title[^"]*"[^>]*>.*?<a[^>]+>([^<]+)</a>', content, re.DOTALL)
+            links = re.findall(r'class="[^"]*job-news-title[^"]*"[^>]*>.*?<a[^>]+href="([^"]+)"', content, re.DOTALL)
+            abstracts = re.findall(r'class="[^"]*post-abstract[^"]*"[^>]*>([^<]+)', content, re.DOTALL)
+            items = list(zip(links[:max_results], titles[:max_results], abstracts[:max_results]))
+
+        if not items:
+            return f"未在牛客网找到「{query}」相关的面经，请尝试其他关键词。"
+
+        lines = [f"## 牛客网搜索「{query}」共找到 {len(items)} 条面经\n"]
+        for i, (link, title, abstract) in enumerate(items[:max_results], 1):
+            title_clean = re.sub(r'<[^>]+>', '', title).strip()
+            abstract_clean = re.sub(r'<[^>]+>', '', abstract).strip()
+            lines.append(f"### {i}. {title_clean}")
+            lines.append(f"**链接**: https://www.nowcoder.com{link}")
+            lines.append(f"**摘要**: {abstract_clean}")
+            lines.append("")
+        return "\n".join(lines)
+
+    except Exception as e:
+        logger.warning(f"[simple_http_search] 搜索失败: {e}")
+        return f"搜索「{query}」时出错：{str(e)}。请稍后重试。"
+
+
+# ─────────────────────────────────────────
 # Agent 工具定义
 # ─────────────────────────────────────────
 

@@ -40,7 +40,7 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnableConfig
 from agent.agent_tools import rag_summarize, search_interview_exp, get_local_interview_exp
 from agent.interview_search_tools import get_local_interview_exp as get_local_interview_exp_raw
-from agent.interview_search_tools import _check_local_exp, _parse_query, METADATA_FILE, INTERVIEW_EXP_DIR, MARKDOWN_DIR
+from agent.interview_search_tools import _check_local_exp, _parse_query, METADATA_FILE, INTERVIEW_EXP_DIR, MARKDOWN_DIR, simple_http_search
 from model.factory import get_chat_model
 from rag.rag_service import RagSummarizeService
 from utils.prompt_loader import load_report_prompts, load_system_prompts, load_system_prompts2, load_pm_prompts
@@ -541,6 +541,27 @@ class InterviewAssistantService:
                 try:
                     response = get_chat_model().invoke(qa_messages)
                     return response.content if hasattr(response, "content") else str(response)
+                except Exception:
+                    pass
+            elif skill_succeeded and not recent_data:
+                # skill 搜索成功但没保存数据，尝试轻量 HTTP 搜索兜底
+                keyword = f"{company} {parsed.get('position', '')}".strip()
+                try:
+                    http_result = simple_http_search(keyword, max_results=5)
+                    if "未找到" not in http_result and "出错" not in http_result:
+                        system_prompt = load_system_prompts2()
+                        qa_messages = [SystemMessage(content=system_prompt)]
+                        if history:
+                            for msg in history:
+                                if msg.get("role") == "user":
+                                    qa_messages.append(HumanMessage(content=msg.get("content", "")))
+                                elif msg.get("role") == "assistant":
+                                    qa_messages.append(AIMessage(content=msg.get("content", "")))
+                        qa_messages.append(HumanMessage(
+                            content=f"【牛客网搜索结果】\n{http_result}\n\n请基于以上面经内容回答用户问题。"
+                        ))
+                        response = get_chat_model().invoke(qa_messages)
+                        return response.content if hasattr(response, "content") else str(response)
                 except Exception:
                     pass
 
